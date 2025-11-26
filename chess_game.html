@@ -387,7 +387,7 @@
             if (gameOver) return;
             
             // В онлайн-режиме проверяем, что это ход игрока
-            if (gameMode === 'online') {
+            if (gameMode === 'online' && gameSessionId) {
                 if (!isMyTurn) {
                     alert('Сейчас не ваш ход! Дождитесь хода противника.');
                     return;
@@ -777,7 +777,14 @@
             }));
             
             closeFindPlayerOverlay();
-            alert('Поиск игрока... Проверьте сообщения от бота.');
+            
+            // Показываем сообщение о поиске
+            const gameContainer = document.querySelector('.game-container');
+            if (gameContainer) {
+                gameContainer.style.display = 'flex';
+            }
+            
+            alert('Поиск игрока... Проверьте сообщения от бота. После того как игрок будет найден, нажмите кнопку в сообщении от бота, чтобы начать игру.');
         }
         
         // Регистрация игрока как активного
@@ -833,9 +840,43 @@
             // Получаем параметры из URL
             const urlParams = new URLSearchParams(window.location.search);
             gameMode = urlParams.get('mode') || 'bot';
-            gameSessionId = urlParams.get('session') || 'session_' + Date.now();
+            gameSessionId = urlParams.get('session') || null;
             myPlayerNumber = urlParams.get('player') ? parseInt(urlParams.get('player')) : null;
             myColor = urlParams.get('color') || 'white';
+            const findPlayer = urlParams.get('find_player') === 'true';
+            
+            // Если нужно показать overlay поиска игрока
+            if (findPlayer && gameMode === 'online' && !gameSessionId) {
+                // Показываем overlay для поиска игрока
+                setTimeout(() => {
+                    showFindPlayerOverlay();
+                }, 500);
+                // Не инициализируем игру, пока игрок не найдет соперника
+                registerPlayer();
+                // Скрываем доску, пока не найдем соперника
+                const gameContainer = document.querySelector('.game-container');
+                if (gameContainer) {
+                    gameContainer.style.display = 'none';
+                }
+                // Инициализируем пустую доску (чтобы не было ошибок)
+                initBoard();
+                return;
+            }
+            
+            // Показываем доску, если она была скрыта
+            const gameContainer = document.querySelector('.game-container');
+            if (gameContainer) {
+                gameContainer.style.display = 'flex';
+            }
+            
+            // Если нет сессии в онлайн-режиме, это ошибка - переключаемся на локальный режим
+            if (gameMode === 'online' && !gameSessionId) {
+                console.warn('Онлайн-режим без сессии, переключаемся на локальный режим');
+                gameMode = 'pvp';
+                gameSessionId = 'session_' + Date.now();
+            } else if (!gameSessionId) {
+                gameSessionId = 'session_' + Date.now();
+            }
             
             // Если есть состояние доски в URL (для онлайн-игры)
             const boardStateParam = urlParams.get('boardState');
@@ -853,14 +894,19 @@
             // Регистрируем игрока
             registerPlayer();
             
-            // Показываем кнопку поиска игрока только в онлайн-режиме
+            // Показываем кнопку поиска игрока только в онлайн-режиме БЕЗ активной сессии
             const findPlayerBtn = document.getElementById('findPlayerBtn');
             if (findPlayerBtn) {
-                if (gameMode === 'online' && isTelegramWebApp()) {
+                if (gameMode === 'online' && isTelegramWebApp() && !gameSessionId) {
                     findPlayerBtn.style.display = 'inline-block';
                 } else {
                     findPlayerBtn.style.display = 'none';
                 }
+            }
+            
+            // В онлайн-режиме с сессией определяем, чей ход
+            if (gameMode === 'online' && gameSessionId && myColor) {
+                isMyTurn = (currentPlayer === myColor);
             }
             
             // Настраиваем обработчик сообщений от бота
@@ -893,6 +939,5 @@
     </script>
 </body>
 </html>
-
 
 
