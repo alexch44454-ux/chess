@@ -292,6 +292,17 @@
         </div>
     </div>
     
+    <div class="find-player-overlay" id="invitationOverlay">
+        <div class="find-player-content">
+            <h2>🎮 Приглашение в игру</h2>
+            <p id="invitationText" style="margin-bottom: 20px; font-size: 16px;"></p>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button onclick="acceptInvitation()" style="background: rgba(46, 204, 113, 0.3); border-color: #2ecc71;">✅ Принять</button>
+                <button onclick="declineInvitation()" style="background: rgba(231, 76, 60, 0.3); border-color: #e74c3c;">❌ Отклонить</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         // Telegram WebApp API
         const tg = window.Telegram?.WebApp;
@@ -311,6 +322,7 @@
         let myPlayerNumber = null; // 1 или 2 для онлайн-игры
         let myColor = 'white'; // 'white' или 'black' для онлайн-игры
         let isMyTurn = true;
+        let currentInvitation = null; // Текущее приглашение
         
         // Unicode символы для фигур
         const pieces = {
@@ -872,7 +884,11 @@
             try {
                 const data = JSON.parse(messageText);
                 
-                if (data.type === 'opponent_move' && data.sessionId === gameSessionId) {
+                if (data.type === 'chess_invitation') {
+                    // Получено приглашение в игру
+                    console.log('🎮 Получено приглашение:', data);
+                    showInvitation(data);
+                } else if (data.type === 'opponent_move' && data.sessionId === gameSessionId) {
                     // Получен ход от противника
                     applyOpponentMove(data.from, data.to, data.boardState);
                 } else if (data.type === 'game_state' && data.sessionId === gameSessionId) {
@@ -885,7 +901,79 @@
                     }
                 }
             } catch (e) {
-                console.error('Ошибка обработки сообщения от бота:', e);
+                // Если не JSON, игнорируем (это может быть обычное текстовое сообщение)
+                console.log('Сообщение не является JSON, игнорируем:', messageText);
+            }
+        }
+        
+        // Показ приглашения
+        function showInvitation(invitationData) {
+            currentInvitation = invitationData;
+            
+            const overlay = document.getElementById('invitationOverlay');
+            const textElement = document.getElementById('invitationText');
+            
+            if (overlay && textElement) {
+                textElement.textContent = `${invitationData.from_user_name} (@${invitationData.from_username || 'без username'}) приглашает вас сыграть в шахматы!`;
+                overlay.classList.add('show');
+            }
+        }
+        
+        // Принятие приглашения
+        function acceptInvitation() {
+            if (!currentInvitation || !tg || !tg.sendData) {
+                alert('Ошибка: приглашение недоступно');
+                return;
+            }
+            
+            try {
+                tg.sendData(JSON.stringify({
+                    action: 'accept_invitation',
+                    invitationId: currentInvitation.invitation_id
+                }));
+                
+                console.log('✅ Приглашение принято');
+                
+                // Закрываем overlay
+                const overlay = document.getElementById('invitationOverlay');
+                if (overlay) {
+                    overlay.classList.remove('show');
+                }
+                
+                currentInvitation = null;
+                
+                alert('✅ Приглашение принято! Проверьте сообщения от бота для начала игры.');
+            } catch (e) {
+                console.error('❌ Ошибка принятия приглашения:', e);
+                alert('Ошибка принятия приглашения. Попробуйте еще раз.');
+            }
+        }
+        
+        // Отклонение приглашения
+        function declineInvitation() {
+            if (!currentInvitation || !tg || !tg.sendData) {
+                alert('Ошибка: приглашение недоступно');
+                return;
+            }
+            
+            try {
+                tg.sendData(JSON.stringify({
+                    action: 'decline_invitation',
+                    invitationId: currentInvitation.invitation_id
+                }));
+                
+                console.log('❌ Приглашение отклонено');
+                
+                // Закрываем overlay
+                const overlay = document.getElementById('invitationOverlay');
+                if (overlay) {
+                    overlay.classList.remove('show');
+                }
+                
+                currentInvitation = null;
+            } catch (e) {
+                console.error('❌ Ошибка отклонения приглашения:', e);
+                alert('Ошибка отклонения приглашения. Попробуйте еще раз.');
             }
         }
         
@@ -966,10 +1054,14 @@
             // Настраиваем обработчик сообщений от бота
             if (tg && tg.onEvent) {
                 tg.onEvent('message', (data) => {
+                    console.log('📨 Получено сообщение от бота:', data);
                     if (data && data.text) {
                         handleBotMessage(data.text);
                     }
                 });
+                console.log('✅ Обработчик сообщений от бота зарегистрирован');
+            } else {
+                console.warn('⚠️ tg.onEvent недоступен, приглашения не будут приходить в приложение');
             }
             
             // Периодически обновляем регистрацию игрока
@@ -993,6 +1085,7 @@
     </script>
 </body>
 </html>
+
 
 
 
