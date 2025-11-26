@@ -280,9 +280,12 @@
     <div class="find-player-overlay" id="findPlayerOverlay">
         <div class="find-player-content">
             <h2>👥 Играть один на один</h2>
+            <p style="font-size: 12px; margin-bottom: 10px; color: rgba(255,255,255,0.7);">
+                ⚠️ Важно: второй игрок тоже должен открыть игру через бота (нажать "Играть один на один"), чтобы его можно было найти.
+            </p>
             <p>Введите username игрока (без @)</p>
             <input type="text" id="playerUsernameInput" placeholder="username" autocomplete="off">
-            <div style="display: flex; gap: 10px; justify-content: center;">
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
                 <button onclick="findPlayerByUsername()">🔍 Найти игрока</button>
                 <button onclick="closeFindPlayerOverlay()">❌ Закрыть</button>
             </div>
@@ -757,7 +760,10 @@
         
         function findPlayerByUsername() {
             const input = document.getElementById('playerUsernameInput');
-            if (!input) return;
+            if (!input) {
+                console.error('❌ Поле ввода username не найдено');
+                return;
+            }
             
             const username = input.value.trim();
             if (!username) {
@@ -767,24 +773,42 @@
             
             if (!tg || !tg.sendData) {
                 alert('Поиск игрока доступен только в Telegram WebApp');
+                console.error('❌ Telegram WebApp API недоступен');
                 return;
             }
             
-            // Отправляем запрос на поиск игрока
-            tg.sendData(JSON.stringify({
-                action: 'find_player_by_username',
-                username: username
-            }));
+            // Сначала регистрируем игрока, чтобы он был в списке активных
+            console.log('📝 Регистрируем игрока перед поиском...');
+            registerPlayer();
             
-            closeFindPlayerOverlay();
-            
-            // Показываем сообщение о поиске
-            const gameContainer = document.querySelector('.game-container');
-            if (gameContainer) {
-                gameContainer.style.display = 'flex';
-            }
-            
-            alert('Поиск игрока... Проверьте сообщения от бота. После того как игрок будет найден, нажмите кнопку в сообщении от бота, чтобы начать игру.');
+            // Небольшая задержка перед отправкой запроса на поиск
+            setTimeout(() => {
+                const searchData = {
+                    action: 'find_player_by_username',
+                    username: username
+                };
+                
+                console.log('🔍 Отправляем запрос на поиск игрока:', searchData);
+                
+                try {
+                    tg.sendData(JSON.stringify(searchData));
+                    console.log('✅ Запрос отправлен успешно');
+                } catch (e) {
+                    console.error('❌ Ошибка отправки запроса:', e);
+                    alert('Ошибка отправки запроса. Попробуйте еще раз.');
+                    return;
+                }
+                
+                closeFindPlayerOverlay();
+                
+                // Показываем сообщение о поиске
+                const gameContainer = document.querySelector('.game-container');
+                if (gameContainer) {
+                    gameContainer.style.display = 'flex';
+                }
+                
+                alert('Поиск игрока... Проверьте сообщения от бота. После того как игрок будет найден, нажмите кнопку в сообщении от бота, чтобы начать игру.');
+            }, 500);
         }
         
         // Регистрация игрока как активного
@@ -798,11 +822,15 @@
                     if (gameSessionId) {
                         data.sessionId = gameSessionId;
                     }
-                    tg.sendData(JSON.stringify(data));
+                    const dataStr = JSON.stringify(data);
+                    console.log('📝 Регистрируем игрока:', dataStr);
+                    tg.sendData(dataStr);
                     console.log('✅ Игрок зарегистрирован как активный', gameSessionId ? `(сессия: ${gameSessionId})` : '');
                 } catch (e) {
-                    console.error('Ошибка регистрации игрока:', e);
+                    console.error('❌ Ошибка регистрации игрока:', e);
                 }
+            } else {
+                console.warn('⚠️ Telegram WebApp недоступен для регистрации');
             }
         }
         
