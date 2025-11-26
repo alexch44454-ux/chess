@@ -191,6 +191,52 @@
             font-size: 24px;
         }
         
+        .find-player-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        
+        .find-player-overlay.show {
+            display: flex;
+        }
+        
+        .find-player-content {
+            background: #2c3e50;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 300px;
+            width: 90%;
+        }
+        
+        .find-player-content h2 {
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+        
+        .find-player-content input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+        }
+        
+        .find-player-content input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
         @media (max-width: 600px) {
             .piece {
                 font-size: 5vw;
@@ -220,6 +266,7 @@
             <button onclick="resign()">Сдаться</button>
             <button onclick="offerDraw()">Предложить ничью</button>
             <button onclick="resetGame()">Новая игра</button>
+            <button id="findPlayerBtn" onclick="showFindPlayerOverlay()" style="display: none;">👥 Играть один на один</button>
         </div>
     </div>
     
@@ -227,6 +274,18 @@
         <div class="game-over-content">
             <h2 id="gameOverText">Игра окончена</h2>
             <button onclick="resetGame()">Новая игра</button>
+        </div>
+    </div>
+    
+    <div class="find-player-overlay" id="findPlayerOverlay">
+        <div class="find-player-content">
+            <h2>👥 Играть один на один</h2>
+            <p>Введите username игрока (без @)</p>
+            <input type="text" id="playerUsernameInput" placeholder="username" autocomplete="off">
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button onclick="findPlayerByUsername()">🔍 Найти игрока</button>
+                <button onclick="closeFindPlayerOverlay()">❌ Закрыть</button>
+            </div>
         </div>
     </div>
     
@@ -242,10 +301,13 @@
         let board = [];
         let currentPlayer = 'white';
         let selectedSquare = null;
-        let gameMode = 'bot'; // 'bot' или 'pvp'
+        let gameMode = 'bot'; // 'bot', 'pvp', 'online'
         let gameSessionId = null;
         let moveCount = 0;
         let gameOver = false;
+        let myPlayerNumber = null; // 1 или 2 для онлайн-игры
+        let myColor = 'white'; // 'white' или 'black' для онлайн-игры
+        let isMyTurn = true;
         
         // Unicode символы для фигур
         const pieces = {
@@ -323,6 +385,18 @@
         // Обработка клика по клетке
         function handleSquareClick(row, col) {
             if (gameOver) return;
+            
+            // В онлайн-режиме проверяем, что это ход игрока
+            if (gameMode === 'online') {
+                if (!isMyTurn) {
+                    alert('Сейчас не ваш ход! Дождитесь хода противника.');
+                    return;
+                }
+                if (currentPlayer !== myColor) {
+                    alert('Сейчас не ваш ход!');
+                    return;
+                }
+            }
             
             const piece = board[row][col];
             
@@ -487,22 +561,70 @@
                 return;
             }
             
-            // Смена хода
-            currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
-            
             // Отправка хода боту (если нужно)
             if (tg && tg.sendData) {
-                tg.sendData(JSON.stringify({
-                    action: 'save_move',
-                    sessionId: gameSessionId,
-                    moveNumber: moveCount,
-                    playerId: currentPlayer === 'white' ? 1 : 2,
-                    moveFrom: `${String.fromCharCode(97 + fromCol)}${8 - fromRow}`,
-                    moveTo: `${String.fromCharCode(97 + toCol)}${8 - toRow}`,
-                    piece: piece.type,
-                    capturedPiece: capturedPiece ? capturedPiece.type : null
-                }));
+                const moveFrom = `${String.fromCharCode(97 + fromCol)}${8 - fromRow}`;
+                const moveTo = `${String.fromCharCode(97 + toCol)}${8 - toRow}`;
+                
+                if (gameMode === 'online') {
+                    // Отправляем ход для синхронизации с другим игроком
+                    tg.sendData(JSON.stringify({
+                        action: 'make_move',
+                        sessionId: gameSessionId,
+                        from: moveFrom,
+                        to: moveTo,
+                        boardState: board,
+                        currentPlayer: currentPlayer === 'white' ? 'black' : 'white'
+                    }));
+                    
+                    // Блокируем ходы до получения ответа от противника
+                    isMyTurn = false;
+                } else {
+                    // Сохраняем ход в БД
+                    tg.sendData(JSON.stringify({
+                        action: 'save_move',
+                        sessionId: gameSessionId,
+                        moveNumber: moveCount,
+                        playerId: currentPlayer === 'white' ? 1 : 2,
+                        moveFrom: moveFrom,
+                        moveTo: moveTo,
+                        piece: piece.type,
+                        capturedPiece: capturedPiece ? capturedPiece.type : null
+                    }));
+                }
             }
+            
+            // Смена хода
+            currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+        }
+        
+        // Применение хода от противника (для онлайн-игры)
+        function applyOpponentMove(fromPos, toPos, newBoardState) {
+            if (gameMode !== 'online') return;
+            
+            // Парсим позиции (например, "e2" -> row=6, col=4)
+            const fromCol = fromPos.charCodeAt(0) - 97;
+            const fromRow = 8 - parseInt(fromPos[1]);
+            const toCol = toPos.charCodeAt(0) - 97;
+            const toRow = 8 - parseInt(toPos[1]);
+            
+            // Применяем ход
+            if (newBoardState) {
+                // Восстанавливаем доску из состояния
+                board = newBoardState;
+            } else {
+                // Применяем ход вручную
+                const piece = board[fromRow][fromCol];
+                board[toRow][toCol] = piece;
+                board[fromRow][fromCol] = null;
+            }
+            
+            // Смена хода
+            currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+            isMyTurn = true;
+            moveCount++;
+            
+            renderBoard();
         }
         
         // Ход бота (случайный валидный ход)
@@ -604,14 +726,166 @@
             }
         }
         
+        // Функции для поиска игрока
+        function isTelegramWebApp() {
+            return typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp;
+        }
+        
+        function showFindPlayerOverlay() {
+            if (!isTelegramWebApp() || !tg || !tg.sendData) {
+                alert('⚠️ Поиск игрока доступен только в Telegram WebApp.\n\nОткройте игру через бота в Telegram.');
+                return;
+            }
+            
+            const overlay = document.getElementById('findPlayerOverlay');
+            if (overlay) {
+                overlay.classList.add('show');
+                const input = document.getElementById('playerUsernameInput');
+                if (input) {
+                    input.value = '';
+                    input.focus();
+                }
+            }
+        }
+        
+        function closeFindPlayerOverlay() {
+            const overlay = document.getElementById('findPlayerOverlay');
+            if (overlay) {
+                overlay.classList.remove('show');
+            }
+        }
+        
+        function findPlayerByUsername() {
+            const input = document.getElementById('playerUsernameInput');
+            if (!input) return;
+            
+            const username = input.value.trim();
+            if (!username) {
+                alert('Введите username игрока');
+                return;
+            }
+            
+            if (!tg || !tg.sendData) {
+                alert('Поиск игрока доступен только в Telegram WebApp');
+                return;
+            }
+            
+            // Отправляем запрос на поиск игрока
+            tg.sendData(JSON.stringify({
+                action: 'find_player_by_username',
+                username: username
+            }));
+            
+            closeFindPlayerOverlay();
+            alert('Поиск игрока... Проверьте сообщения от бота.');
+        }
+        
+        // Регистрация игрока как активного
+        function registerPlayer() {
+            if (tg && tg.sendData && isTelegramWebApp()) {
+                try {
+                    const data = {
+                        action: 'register_player'
+                    };
+                    // Если есть сессия, отправляем её ID
+                    if (gameSessionId) {
+                        data.sessionId = gameSessionId;
+                    }
+                    tg.sendData(JSON.stringify(data));
+                    console.log('✅ Игрок зарегистрирован как активный', gameSessionId ? `(сессия: ${gameSessionId})` : '');
+                } catch (e) {
+                    console.error('Ошибка регистрации игрока:', e);
+                }
+            }
+        }
+        
+        // Обновление регистрации игрока (периодически)
+        function updatePlayerRegistration() {
+            if (gameMode === 'online') {
+                registerPlayer();
+            }
+        }
+        
+        // Обработка сообщений от бота
+        function handleBotMessage(messageText) {
+            try {
+                const data = JSON.parse(messageText);
+                
+                if (data.type === 'opponent_move' && data.sessionId === gameSessionId) {
+                    // Получен ход от противника
+                    applyOpponentMove(data.from, data.to, data.boardState);
+                } else if (data.type === 'game_state' && data.sessionId === gameSessionId) {
+                    // Получено состояние игры
+                    if (data.boardState) {
+                        board = data.boardState;
+                        currentPlayer = data.currentPlayer || 'white';
+                        isMyTurn = (currentPlayer === myColor);
+                        renderBoard();
+                    }
+                }
+            } catch (e) {
+                console.error('Ошибка обработки сообщения от бота:', e);
+            }
+        }
+        
         // Инициализация игры
         function init() {
             // Получаем параметры из URL
             const urlParams = new URLSearchParams(window.location.search);
             gameMode = urlParams.get('mode') || 'bot';
             gameSessionId = urlParams.get('session') || 'session_' + Date.now();
+            myPlayerNumber = urlParams.get('player') ? parseInt(urlParams.get('player')) : null;
+            myColor = urlParams.get('color') || 'white';
             
-            initBoard();
+            // Если есть состояние доски в URL (для онлайн-игры)
+            const boardStateParam = urlParams.get('boardState');
+            if (boardStateParam && gameMode === 'online') {
+                try {
+                    board = JSON.parse(decodeURIComponent(boardStateParam));
+                } catch (e) {
+                    console.error('Ошибка парсинга состояния доски:', e);
+                    initBoard();
+                }
+            } else {
+                initBoard();
+            }
+            
+            // Регистрируем игрока
+            registerPlayer();
+            
+            // Показываем кнопку поиска игрока только в онлайн-режиме
+            const findPlayerBtn = document.getElementById('findPlayerBtn');
+            if (findPlayerBtn) {
+                if (gameMode === 'online' && isTelegramWebApp()) {
+                    findPlayerBtn.style.display = 'inline-block';
+                } else {
+                    findPlayerBtn.style.display = 'none';
+                }
+            }
+            
+            // Настраиваем обработчик сообщений от бота
+            if (tg && tg.onEvent) {
+                tg.onEvent('message', (data) => {
+                    if (data && data.text) {
+                        handleBotMessage(data.text);
+                    }
+                });
+            }
+            
+            // Периодически обновляем регистрацию игрока
+            if (gameMode === 'online') {
+                setInterval(updatePlayerRegistration, 30000); // Каждые 30 секунд
+            }
+            
+            // Обработка Enter в поле поиска игрока
+            const usernameInput = document.getElementById('playerUsernameInput');
+            if (usernameInput) {
+                usernameInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        findPlayerByUsername();
+                    }
+                });
+            }
         }
         
         // Запуск при загрузке
@@ -619,5 +893,6 @@
     </script>
 </body>
 </html>
+
 
 
