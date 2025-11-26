@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Шахматы - Telegram Game</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100vh;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+        }
+        
+        .game-info {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .player-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .current-turn {
+            background: rgba(46, 204, 113, 0.3);
+            border: 2px solid #2ecc71;
+        }
+        
+        .chess-board {
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            border: 3px solid #8b4513;
+            background: #d4a574;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3vw;
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+        }
+        
+        .square.light {
+            background: #f0d9b5;
+        }
+        
+        .square.dark {
+            background: #b58863;
+        }
+        
+        .square.selected {
+            background: #f7f769 !important;
+            box-shadow: inset 0 0 0 3px #ffd700;
+        }
+        
+        .square.possible-move {
+            background: #90ee90 !important;
+        }
+        
+        .square.possible-capture {
+            background: #ff6b6b !important;
+        }
+        
+        .piece {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4vw;
+            cursor: pointer;
+            user-select: none;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        button:active {
+            transform: scale(0.95);
+        }
+        
+        .game-over {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .game-over.show {
+            display: flex;
+        }
+        
+        .game-over-content {
+            background: #2c3e50;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 300px;
+        }
+        
+        .game-over-content h2 {
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        @media (max-width: 600px) {
+            .piece {
+                font-size: 5vw;
+            }
+            .square {
+                font-size: 4vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-info">
+            <div class="player-info" id="whitePlayer">
+                <div>⚪ Белые</div>
+                <div id="whiteTime">--:--</div>
+            </div>
+            <div class="player-info" id="blackPlayer">
+                <div>⚫ Черные</div>
+                <div id="blackTime">--:--</div>
+            </div>
+        </div>
+        
+        <div class="chess-board" id="chessBoard"></div>
+        
+        <div class="controls">
+            <button onclick="resign()">Сдаться</button>
+            <button onclick="offerDraw()">Предложить ничью</button>
+            <button onclick="resetGame()">Новая игра</button>
+        </div>
+    </div>
+    
+    <div class="game-over" id="gameOver">
+        <div class="game-over-content">
+            <h2 id="gameOverText">Игра окончена</h2>
+            <button onclick="resetGame()">Новая игра</button>
+        </div>
+    </div>
+    
+    <script>
+        // Telegram WebApp API
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+        }
+        
+        // Шахматная доска и состояние игры
+        let board = [];
+        let currentPlayer = 'white';
+        let selectedSquare = null;
+        let gameMode = 'bot'; // 'bot' или 'pvp'
+        let gameSessionId = null;
+        let moveCount = 0;
+        let gameOver = false;
+        
+        // Unicode символы для фигур
+        const pieces = {
+            white: {
+                king: '♔',
+                queen: '♕',
+                rook: '♖',
+                bishop: '♗',
+                knight: '♘',
+                pawn: '♙'
+            },
+            black: {
+                king: '♚',
+                queen: '♛',
+                rook: '♜',
+                bishop: '♝',
+                knight: '♞',
+                pawn: '♟'
+            }
+        };
+        
+        // Инициализация доски
+        function initBoard() {
+            board = Array(8).fill(null).map(() => Array(8).fill(null));
+            
+            // Расставляем фигуры
+            const initialSetup = [
+                ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'],
+                ['pawn', 'pawn', 'pawn', 'pawn', 'pawn', 'pawn', 'pawn', 'pawn']
+            ];
+            
+            // Черные фигуры (верх)
+            for (let col = 0; col < 8; col++) {
+                board[0][col] = { type: initialSetup[0][col], color: 'black' };
+                board[1][col] = { type: initialSetup[1][col], color: 'black' };
+            }
+            
+            // Белые фигуры (низ)
+            for (let col = 0; col < 8; col++) {
+                board[6][col] = { type: initialSetup[1][col], color: 'white' };
+                board[7][col] = { type: initialSetup[0][col], color: 'white' };
+            }
+            
+            renderBoard();
+        }
+        
+        // Отрисовка доски
+        function renderBoard() {
+            const boardElement = document.getElementById('chessBoard');
+            boardElement.innerHTML = '';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'square ' + ((row + col) % 2 === 0 ? 'light' : 'dark');
+                    square.dataset.row = row;
+                    square.dataset.col = col;
+                    
+                    const piece = board[row][col];
+                    if (piece) {
+                        const pieceElement = document.createElement('div');
+                        pieceElement.className = 'piece';
+                        pieceElement.textContent = pieces[piece.color][piece.type];
+                        square.appendChild(pieceElement);
+                    }
+                    
+                    square.addEventListener('click', () => handleSquareClick(row, col));
+                    boardElement.appendChild(square);
+                }
+            }
+            
+            updatePlayerInfo();
+        }
+        
+        // Обработка клика по клетке
+        function handleSquareClick(row, col) {
+            if (gameOver) return;
+            
+            const piece = board[row][col];
+            
+            if (selectedSquare) {
+                const [selectedRow, selectedCol] = selectedSquare;
+                const selectedPiece = board[selectedRow][selectedCol];
+                
+                // Если кликнули на свою фигуру, выбираем её
+                if (piece && piece.color === currentPlayer) {
+                    selectSquare(row, col);
+                    return;
+                }
+                
+                // Пытаемся сделать ход
+                if (isValidMove(selectedRow, selectedCol, row, col)) {
+                    makeMove(selectedRow, selectedCol, row, col);
+                    selectedSquare = null;
+                    renderBoard();
+                    
+                    // Если игра против бота и ход черных
+                    if (gameMode === 'bot' && currentPlayer === 'black') {
+                        setTimeout(makeBotMove, 500);
+                    }
+                } else {
+                    // Если ход невалидный, снимаем выделение или выбираем новую фигуру
+                    if (piece && piece.color === currentPlayer) {
+                        selectSquare(row, col);
+                    } else {
+                        selectedSquare = null;
+                        renderBoard();
+                    }
+                }
+            } else {
+                // Выбираем фигуру
+                if (piece && piece.color === currentPlayer) {
+                    selectSquare(row, col);
+                }
+            }
+        }
+        
+        // Выбор клетки
+        function selectSquare(row, col) {
+            selectedSquare = [row, col];
+            renderBoard();
+            
+            // Подсвечиваем выбранную клетку
+            const square = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            if (square) {
+                square.classList.add('selected');
+            }
+            
+            // Подсвечиваем возможные ходы
+            highlightPossibleMoves(row, col);
+        }
+        
+        // Подсветка возможных ходов
+        function highlightPossibleMoves(row, col) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (isValidMove(row, col, r, c)) {
+                        const square = document.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+                        if (square) {
+                            if (board[r][c]) {
+                                square.classList.add('possible-capture');
+                            } else {
+                                square.classList.add('possible-move');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Проверка валидности хода (упрощенная версия)
+        function isValidMove(fromRow, fromCol, toRow, toCol) {
+            const piece = board[fromRow][fromCol];
+            if (!piece) return false;
+            
+            // Нельзя ходить на свою фигуру
+            if (board[toRow][toCol] && board[toRow][toCol].color === piece.color) {
+                return false;
+            }
+            
+            // Упрощенная логика ходов (базовая версия)
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece.type) {
+                case 'pawn':
+                    if (piece.color === 'white') {
+                        // Белые пешки ходят вверх
+                        if (fromCol === toCol && !board[toRow][toCol]) {
+                            return toRow === fromRow - 1 || (fromRow === 6 && toRow === 4);
+                        }
+                        // Взятие по диагонали
+                        if (colDiff === 1 && rowDiff === 1 && board[toRow][toCol]) {
+                            return toRow === fromRow - 1;
+                        }
+                    } else {
+                        // Черные пешки ходят вниз
+                        if (fromCol === toCol && !board[toRow][toCol]) {
+                            return toRow === fromRow + 1 || (fromRow === 1 && toRow === 3);
+                        }
+                        // Взятие по диагонали
+                        if (colDiff === 1 && rowDiff === 1 && board[toRow][toCol]) {
+                            return toRow === fromRow + 1;
+                        }
+                    }
+                    return false;
+                    
+                case 'rook':
+                    return (rowDiff === 0 || colDiff === 0) && isPathClear(fromRow, fromCol, toRow, toCol);
+                    
+                case 'bishop':
+                    return rowDiff === colDiff && isPathClear(fromRow, fromCol, toRow, toCol);
+                    
+                case 'queen':
+                    return ((rowDiff === 0 || colDiff === 0) || (rowDiff === colDiff)) && 
+                           isPathClear(fromRow, fromCol, toRow, toCol);
+                    
+                case 'king':
+                    return rowDiff <= 1 && colDiff <= 1;
+                    
+                case 'knight':
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                    
+                default:
+                    return false;
+            }
+        }
+        
+        // Проверка свободного пути
+        function isPathClear(fromRow, fromCol, toRow, toCol) {
+            const rowStep = toRow > fromRow ? 1 : (toRow < fromRow ? -1 : 0);
+            const colStep = toCol > fromCol ? 1 : (toCol < fromCol ? -1 : 0);
+            
+            let row = fromRow + rowStep;
+            let col = fromCol + colStep;
+            
+            while (row !== toRow || col !== toCol) {
+                if (board[row][col]) return false;
+                row += rowStep;
+                col += colStep;
+            }
+            
+            return true;
+        }
+        
+        // Выполнение хода
+        function makeMove(fromRow, fromCol, toRow, toCol) {
+            const piece = board[fromRow][fromCol];
+            const capturedPiece = board[toRow][toCol];
+            
+            board[toRow][toCol] = piece;
+            board[fromRow][fromCol] = null;
+            
+            moveCount++;
+            
+            // Проверка на мат (упрощенная)
+            if (isCheckmate(currentPlayer === 'white' ? 'black' : 'white')) {
+                endGame(currentPlayer === 'white' ? 'white' : 'black', 'checkmate');
+                return;
+            }
+            
+            // Смена хода
+            currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+            
+            // Отправка хода боту (если нужно)
+            if (tg && tg.sendData) {
+                tg.sendData(JSON.stringify({
+                    action: 'save_move',
+                    sessionId: gameSessionId,
+                    moveNumber: moveCount,
+                    playerId: currentPlayer === 'white' ? 1 : 2,
+                    moveFrom: `${String.fromCharCode(97 + fromCol)}${8 - fromRow}`,
+                    moveTo: `${String.fromCharCode(97 + toCol)}${8 - toRow}`,
+                    piece: piece.type,
+                    capturedPiece: capturedPiece ? capturedPiece.type : null
+                }));
+            }
+        }
+        
+        // Ход бота (случайный валидный ход)
+        function makeBotMove() {
+            if (gameOver || currentPlayer !== 'black') return;
+            
+            const possibleMoves = [];
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = board[row][col];
+                    if (piece && piece.color === 'black') {
+                        for (let toRow = 0; toRow < 8; toRow++) {
+                            for (let toCol = 0; toCol < 8; toCol++) {
+                                if (isValidMove(row, col, toRow, toCol)) {
+                                    possibleMoves.push([row, col, toRow, toCol]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (possibleMoves.length > 0) {
+                const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                makeMove(move[0], move[1], move[2], move[3]);
+                renderBoard();
+            }
+        }
+        
+        // Проверка на мат (упрощенная)
+        function isCheckmate(color) {
+            // Упрощенная проверка - если король под ударом и нет ходов
+            // В реальной игре нужна более сложная логика
+            return false;
+        }
+        
+        // Обновление информации об игроках
+        function updatePlayerInfo() {
+            const whitePlayer = document.getElementById('whitePlayer');
+            const blackPlayer = document.getElementById('blackPlayer');
+            
+            whitePlayer.classList.toggle('current-turn', currentPlayer === 'white');
+            blackPlayer.classList.toggle('current-turn', currentPlayer === 'black');
+        }
+        
+        // Сдача
+        function resign() {
+            if (gameOver) return;
+            endGame(currentPlayer === 'white' ? 'black' : 'white', 'resign');
+        }
+        
+        // Предложение ничьей
+        function offerDraw() {
+            if (gameOver) return;
+            if (confirm('Предложить ничью?')) {
+                endGame(null, 'draw');
+            }
+        }
+        
+        // Новая игра
+        function resetGame() {
+            gameOver = false;
+            currentPlayer = 'white';
+            selectedSquare = null;
+            moveCount = 0;
+            document.getElementById('gameOver').classList.remove('show');
+            initBoard();
+        }
+        
+        // Завершение игры
+        function endGame(winner, reason) {
+            gameOver = true;
+            const gameOverElement = document.getElementById('gameOver');
+            const gameOverText = document.getElementById('gameOverText');
+            
+            let message = '';
+            if (reason === 'checkmate') {
+                message = `Мат! Победили ${winner === 'white' ? 'белые' : 'черные'}!`;
+            } else if (reason === 'resign') {
+                message = `Игрок сдался. Победили ${winner === 'white' ? 'белые' : 'черные'}!`;
+            } else if (reason === 'draw') {
+                message = 'Ничья!';
+            }
+            
+            gameOverText.textContent = message;
+            gameOverElement.classList.add('show');
+            
+            // Отправка результата боту
+            if (tg && tg.sendData) {
+                tg.sendData(JSON.stringify({
+                    action: 'save_game',
+                    sessionId: gameSessionId,
+                    winnerId: winner === 'white' ? 1 : (winner === 'black' ? 2 : null),
+                    result: reason === 'draw' ? 'draw' : 'win',
+                    movesCount: moveCount,
+                    gameMode: gameMode
+                }));
+            }
+        }
+        
+        // Инициализация игры
+        function init() {
+            // Получаем параметры из URL
+            const urlParams = new URLSearchParams(window.location.search);
+            gameMode = urlParams.get('mode') || 'bot';
+            gameSessionId = urlParams.get('session') || 'session_' + Date.now();
+            
+            initBoard();
+        }
+        
+        // Запуск при загрузке
+        init();
+    </script>
+</body>
+</html>
+
