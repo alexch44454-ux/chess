@@ -789,25 +789,42 @@
                 };
                 
                 console.log('🔍 Отправляем запрос на поиск игрока:', searchData);
+                console.log('tg:', tg);
+                console.log('tg.sendData:', tg?.sendData);
+                console.log('typeof tg.sendData:', typeof tg?.sendData);
                 
-                try {
-                    tg.sendData(JSON.stringify(searchData));
-                    console.log('✅ Запрос отправлен успешно');
-                } catch (e) {
-                    console.error('❌ Ошибка отправки запроса:', e);
-                    alert('Ошибка отправки запроса. Попробуйте еще раз.');
+                if (!tg || !tg.sendData) {
+                    alert('Telegram WebApp API недоступен. Убедитесь, что игра открыта через бота в Telegram.');
+                    console.error('❌ Telegram WebApp API недоступен');
                     return;
                 }
                 
-                closeFindPlayerOverlay();
-                
-                // Показываем сообщение о поиске
-                const gameContainer = document.querySelector('.game-container');
-                if (gameContainer) {
-                    gameContainer.style.display = 'flex';
+                if (typeof tg.sendData !== 'function') {
+                    alert('Ошибка: sendData не является функцией. Попробуйте перезагрузить игру.');
+                    console.error('❌ tg.sendData не является функцией');
+                    return;
                 }
                 
-                alert('Поиск игрока... Проверьте сообщения от бота. После того как игрок будет найден, нажмите кнопку в сообщении от бота, чтобы начать игру.');
+                try {
+                    const dataStr = JSON.stringify(searchData);
+                    console.log('📤 Отправляем данные:', dataStr);
+                    tg.sendData(dataStr);
+                    console.log('✅ Запрос отправлен успешно');
+                    
+                    closeFindPlayerOverlay();
+                    
+                    // Показываем сообщение о поиске
+                    const gameContainer = document.querySelector('.game-container');
+                    if (gameContainer) {
+                        gameContainer.style.display = 'flex';
+                    }
+                    
+                    alert('Поиск игрока... Проверьте сообщения от бота. После того как игрок будет найден, нажмите кнопку в сообщении от бота, чтобы начать игру.');
+                } catch (e) {
+                    console.error('❌ Ошибка отправки запроса:', e);
+                    alert('Ошибка отправки запроса: ' + e.message + '\n\nПопробуйте еще раз или перезагрузите игру.');
+                    return;
+                }
             }, 500);
         }
         
@@ -824,13 +841,22 @@
                     }
                     const dataStr = JSON.stringify(data);
                     console.log('📝 Регистрируем игрока:', dataStr);
-                    tg.sendData(dataStr);
-                    console.log('✅ Игрок зарегистрирован как активный', gameSessionId ? `(сессия: ${gameSessionId})` : '');
+                    
+                    // Проверяем, что sendData доступен
+                    if (typeof tg.sendData === 'function') {
+                        tg.sendData(dataStr);
+                        console.log('✅ Игрок зарегистрирован как активный', gameSessionId ? `(сессия: ${gameSessionId})` : '');
+                    } else {
+                        console.error('❌ tg.sendData не является функцией:', typeof tg.sendData);
+                    }
                 } catch (e) {
                     console.error('❌ Ошибка регистрации игрока:', e);
                 }
             } else {
                 console.warn('⚠️ Telegram WebApp недоступен для регистрации');
+                console.log('tg:', tg);
+                console.log('tg.sendData:', tg?.sendData);
+                console.log('isTelegramWebApp():', isTelegramWebApp());
             }
         }
         
@@ -967,5 +993,7 @@
     </script>
 </body>
 </html>
+
+
 
 
