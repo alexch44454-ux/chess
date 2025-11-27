@@ -334,13 +334,48 @@
             <h2>♟️ Шахматы</h2>
             <p>Выберите режим игры:</p>
             <div class="mode-buttons">
-                <button class="mode-btn" onclick="selectMode('bot')">
+                <button class="mode-btn" onclick="showBotDifficultyMenu()">
                     <span class="mode-icon">🤖</span>
                     <span class="mode-text">Играть против бота</span>
                 </button>
                 <button class="mode-btn" onclick="selectMode('pvp')">
                     <span class="mode-icon">👥</span>
                     <span class="mode-text">Два игрока на одном устройстве</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Меню выбора сложности бота -->
+    <div class="mode-menu-overlay" id="botDifficultyOverlay" style="display: none;">
+        <div class="mode-menu">
+            <h2>🤖 Выбор сложности</h2>
+            <p>Выберите уровень сложности бота:</p>
+            <div style="padding: 20px 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                    <span style="color: white; font-size: 18px;">Сложность:</span>
+                    <span id="difficultyValue" style="color: #2ecc71; font-size: 24px; font-weight: bold;">5</span>
+                </div>
+                <input type="range" id="difficultySlider" min="1" max="10" value="5" 
+                       style="width: 100%; height: 10px; border-radius: 5px; outline: none; background: rgba(255,255,255,0.2);"
+                       oninput="updateDifficultyDisplay(this.value)">
+                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.6);">
+                    <span>Легко</span>
+                    <span>Средне</span>
+                    <span>Сложно</span>
+                </div>
+                <div id="difficultyDescription" style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; color: rgba(255,255,255,0.9); font-size: 14px; text-align: center;">
+                    Средний уровень: бот делает разумные ходы
+                </div>
+            </div>
+            <div class="mode-buttons" style="margin-top: 20px;">
+                <button class="mode-btn" onclick="startBotGame()" style="background: rgba(46, 204, 113, 0.3); border-color: #2ecc71;">
+                    <span class="mode-icon">▶️</span>
+                    <span class="mode-text">Начать игру</span>
+                </button>
+                <button class="mode-btn" onclick="backToModeMenu()" style="background: rgba(149, 165, 166, 0.3); border-color: #95a5a6;">
+                    <span class="mode-icon">⬅️</span>
+                    <span class="mode-text">Назад</span>
                 </button>
             </div>
         </div>
@@ -477,6 +512,7 @@
         let isMyTurn = true;
         let currentInvitation = null; // Текущее приглашение
         let currentLobbyId = null; // ID текущего лобби
+        let botDifficulty = 5; // Сложность бота от 1 до 10 (по умолчанию 5)
         
         // Unicode символы для фигур
         const pieces = {
@@ -796,12 +832,78 @@
             renderBoard();
         }
         
-        // Ход бота (случайный валидный ход)
+        // Получить стоимость фигуры
+        function getPieceValue(piece) {
+            if (!piece) return 0;
+            const values = {
+                'pawn': 1,
+                'knight': 3,
+                'bishop': 3,
+                'rook': 5,
+                'queen': 9,
+                'king': 100
+            };
+            return values[piece.type] || 0;
+        }
+        
+        // Проверить, атакуется ли позиция (упрощенная версия)
+        function isSquareUnderAttack(row, col, boardState, attackingColor) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = boardState[r][c];
+                    if (piece && piece.color === attackingColor) {
+                        // Сохраняем текущее состояние доски
+                        const originalBoard = board;
+                        board = boardState;
+                        const canAttack = isValidMove(r, c, row, col);
+                        board = originalBoard;
+                        if (canAttack) return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        // Оценить ход (чем выше оценка, тем лучше ход)
+        function evaluateMove(fromRow, fromCol, toRow, toCol) {
+            let score = 0;
+            const piece = board[fromRow][fromCol];
+            const targetPiece = board[toRow][toCol];
+            
+            // Бонус за взятие фигуры
+            if (targetPiece && targetPiece.color === 'white') {
+                score += getPieceValue(targetPiece) * 10;
+            }
+            
+            // Штраф за потерю фигуры (если после хода фигура под ударом)
+            const tempBoard = JSON.parse(JSON.stringify(board));
+            tempBoard[toRow][toCol] = piece;
+            tempBoard[fromRow][fromCol] = null;
+            
+            // Проверяем, атакуют ли белые эту позицию
+            if (isSquareUnderAttack(toRow, toCol, tempBoard, 'white')) {
+                score -= getPieceValue(piece) * 5;
+            }
+            
+            // Бонус за продвижение пешек
+            if (piece.type === 'pawn') {
+                score += (7 - toRow) * 0.5; // Чем ближе к концу доски, тем лучше
+            }
+            
+            // Бонус за центральные позиции
+            const centerDistance = Math.abs(toRow - 3.5) + Math.abs(toCol - 3.5);
+            score += (4 - centerDistance) * 0.3;
+            
+            return score;
+        }
+        
+        // Ход бота с учетом сложности
         function makeBotMove() {
             if (gameOver || currentPlayer !== 'black') return;
             
             const possibleMoves = [];
             
+            // Собираем все возможные ходы
             for (let row = 0; row < 8; row++) {
                 for (let col = 0; col < 8; col++) {
                     const piece = board[row][col];
@@ -809,7 +911,14 @@
                         for (let toRow = 0; toRow < 8; toRow++) {
                             for (let toCol = 0; toCol < 8; toCol++) {
                                 if (isValidMove(row, col, toRow, toCol)) {
-                                    possibleMoves.push([row, col, toRow, toCol]);
+                                    const score = evaluateMove(row, col, toRow, toCol);
+                                    possibleMoves.push({
+                                        fromRow: row,
+                                        fromCol: col,
+                                        toRow: toRow,
+                                        toCol: toCol,
+                                        score: score
+                                    });
                                 }
                             }
                         }
@@ -817,11 +926,49 @@
                 }
             }
             
-            if (possibleMoves.length > 0) {
-                const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-                makeMove(move[0], move[1], move[2], move[3]);
-                renderBoard();
+            if (possibleMoves.length === 0) return;
+            
+            let selectedMove;
+            
+            // Выбор хода в зависимости от сложности
+            if (botDifficulty <= 2) {
+                // Очень легко: случайный ход, иногда делает плохие ходы
+                const randomIndex = Math.floor(Math.random() * possibleMoves.length);
+                selectedMove = possibleMoves[randomIndex];
+            } else if (botDifficulty <= 4) {
+                // Легко: предпочитает ходы с положительной оценкой, но иногда ошибается
+                const goodMoves = possibleMoves.filter(m => m.score >= 0);
+                const movesToChoose = goodMoves.length > 0 ? goodMoves : possibleMoves;
+                // 70% шанс выбрать хороший ход, 30% - случайный
+                if (Math.random() < 0.7 && goodMoves.length > 0) {
+                    selectedMove = goodMoves[Math.floor(Math.random() * goodMoves.length)];
+                } else {
+                    selectedMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                }
+            } else if (botDifficulty <= 6) {
+                // Средне: предпочитает хорошие ходы, избегает плохих
+                const goodMoves = possibleMoves.filter(m => m.score >= 0);
+                const movesToChoose = goodMoves.length > 0 ? goodMoves : possibleMoves;
+                // Сортируем по оценке и выбираем из лучших 50%
+                movesToChoose.sort((a, b) => b.score - a.score);
+                const topMoves = movesToChoose.slice(0, Math.max(1, Math.floor(movesToChoose.length * 0.5)));
+                selectedMove = topMoves[Math.floor(Math.random() * topMoves.length)];
+            } else if (botDifficulty <= 8) {
+                // Сложно: выбирает из лучших ходов
+                possibleMoves.sort((a, b) => b.score - a.score);
+                const topMoves = possibleMoves.slice(0, Math.max(1, Math.floor(possibleMoves.length * 0.3)));
+                selectedMove = topMoves[Math.floor(Math.random() * topMoves.length)];
+            } else {
+                // Очень сложно: всегда выбирает лучший ход
+                possibleMoves.sort((a, b) => b.score - a.score);
+                selectedMove = possibleMoves[0];
             }
+            
+            // Добавляем небольшую задержку для реалистичности
+            setTimeout(() => {
+                makeMove(selectedMove.fromRow, selectedMove.fromCol, selectedMove.toRow, selectedMove.toCol);
+                renderBoard();
+            }, botDifficulty <= 3 ? 300 : (botDifficulty <= 6 ? 500 : 700));
         }
         
         // Проверка на мат (упрощенная)
@@ -1401,6 +1548,95 @@
             }
         }
         
+        // Показать меню выбора сложности бота
+        function showBotDifficultyMenu() {
+            const modeMenuOverlay = document.getElementById('modeMenuOverlay');
+            const botDifficultyOverlay = document.getElementById('botDifficultyOverlay');
+            
+            if (modeMenuOverlay) {
+                modeMenuOverlay.style.display = 'none';
+            }
+            if (botDifficultyOverlay) {
+                botDifficultyOverlay.style.display = 'flex';
+                // Загружаем сохраненную сложность из localStorage
+                const savedDifficulty = localStorage.getItem('chess_bot_difficulty');
+                if (savedDifficulty) {
+                    botDifficulty = parseInt(savedDifficulty) || 5;
+                    const slider = document.getElementById('difficultySlider');
+                    if (slider) {
+                        slider.value = botDifficulty;
+                        updateDifficultyDisplay(botDifficulty);
+                    }
+                }
+            }
+        }
+        
+        // Вернуться к меню выбора режима
+        function backToModeMenu() {
+            const modeMenuOverlay = document.getElementById('modeMenuOverlay');
+            const botDifficultyOverlay = document.getElementById('botDifficultyOverlay');
+            
+            if (botDifficultyOverlay) {
+                botDifficultyOverlay.style.display = 'none';
+            }
+            if (modeMenuOverlay) {
+                modeMenuOverlay.style.display = 'flex';
+            }
+        }
+        
+        // Обновить отображение сложности
+        function updateDifficultyDisplay(value) {
+            botDifficulty = parseInt(value);
+            const difficultyValue = document.getElementById('difficultyValue');
+            const difficultyDescription = document.getElementById('difficultyDescription');
+            
+            if (difficultyValue) {
+                difficultyValue.textContent = botDifficulty;
+            }
+            
+            if (difficultyDescription) {
+                let description = '';
+                if (botDifficulty <= 2) {
+                    description = 'Очень легко: бот делает случайные ходы, часто ошибается';
+                } else if (botDifficulty <= 4) {
+                    description = 'Легко: бот делает простые ходы, иногда ошибается';
+                } else if (botDifficulty <= 6) {
+                    description = 'Средне: бот делает разумные ходы, защищает фигуры';
+                } else if (botDifficulty <= 8) {
+                    description = 'Сложно: бот играет хорошо, ищет лучшие ходы';
+                } else {
+                    description = 'Очень сложно: бот играет на высоком уровне, минимизирует ошибки';
+                }
+                difficultyDescription.textContent = description;
+            }
+        }
+        
+        // Начать игру с ботом
+        function startBotGame() {
+            // Сохраняем выбранную сложность
+            localStorage.setItem('chess_bot_difficulty', botDifficulty.toString());
+            
+            const botDifficultyOverlay = document.getElementById('botDifficultyOverlay');
+            if (botDifficultyOverlay) {
+                botDifficultyOverlay.style.display = 'none';
+            }
+            
+            // Устанавливаем режим игры
+            gameMode = 'bot';
+            
+            // Показываем игровое поле
+            const gameContainer = document.querySelector('.game-container');
+            if (gameContainer) {
+                gameContainer.style.display = 'flex';
+            }
+            
+            // Инициализируем доску и начинаем игру
+            initBoard();
+            
+            console.log(`🎮 Режим: игра против бота (сложность: ${botDifficulty}/10)`);
+            currentPlayer = 'white'; // Игрок всегда белыми против бота
+        }
+        
         // Функция выбора режима игры
         function selectMode(mode) {
             console.log('Выбран режим:', mode);
@@ -1422,10 +1658,7 @@
             // Инициализируем доску и начинаем игру
             initBoard();
             
-            if (mode === 'bot') {
-                console.log('🎮 Режим: игра против бота');
-                currentPlayer = 'white'; // Игрок всегда белыми против бота
-            } else if (mode === 'pvp') {
+            if (mode === 'pvp') {
                 console.log('👥 Режим: два игрока на одном устройстве');
                 currentPlayer = 'white'; // Начинают белые
             }
@@ -1598,6 +1831,7 @@
     </script>
 </body>
 </html>
+
 
 
 
