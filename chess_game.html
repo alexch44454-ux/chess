@@ -948,6 +948,11 @@
                     // Получен список публичных лобби
                     console.log('📋 Получен список публичных лобби:', data);
                     console.log('📋 Количество лобби:', (data.lobbies || []).length);
+                    
+                    // Отменяем повторные попытки, так как получили ответ
+                    publicLobbiesRequestId = null;
+                    publicLobbiesRetryCount = 0;
+                    
                     displayPublicLobbies(data.lobbies || []);
                 } else if (data.type === 'opponent_move' && data.sessionId === gameSessionId) {
                     // Получен ход от противника
@@ -1186,6 +1191,11 @@
             refreshPublicLobbies();
         }
         
+        // Переменная для хранения последнего запроса списка лобби
+        let publicLobbiesRequestId = null;
+        let publicLobbiesRetryCount = 0;
+        const MAX_RETRIES = 3;
+        
         // Обновить список публичных лобби
         function refreshPublicLobbies() {
             const listElement = document.getElementById('publicLobbiesList');
@@ -1203,17 +1213,63 @@
             listElement.innerHTML = 
                 '<p style="text-align: center; color: rgba(255,255,255,0.7);">Загрузка...</p>';
             
-            try {
-                tg.sendData(JSON.stringify({
-                    action: 'get_public_lobbies'
-                }));
+            // Генерируем уникальный ID запроса
+            publicLobbiesRequestId = Date.now();
+            const requestId = publicLobbiesRequestId;
+            publicLobbiesRetryCount = 0;
+            
+            // Функция для повторной попытки
+            const retryRequest = () => {
+                if (requestId !== publicLobbiesRequestId) {
+                    // Запрос был отменен новым запросом
+                    return;
+                }
                 
-                console.log('📋 Запрос списка публичных лобби отправлен');
-            } catch (e) {
-                console.error('❌ Ошибка запроса списка лобби:', e);
-                listElement.innerHTML = 
-                    '<p style="text-align: center; color: rgba(255,255,255,0.7);">❌ Ошибка загрузки</p>';
-            }
+                publicLobbiesRetryCount++;
+                console.log(`📋 Попытка ${publicLobbiesRetryCount} получить список лобби`);
+                
+                try {
+                    tg.sendData(JSON.stringify({
+                        action: 'get_public_lobbies',
+                        requestId: requestId
+                    }));
+                } catch (e) {
+                    console.error('❌ Ошибка запроса списка лобби:', e);
+                    if (publicLobbiesRetryCount >= MAX_RETRIES) {
+                        listElement.innerHTML = 
+                            '<p style="text-align: center; color: rgba(255,255,255,0.7);">❌ Ошибка загрузки. Попробуйте позже.</p>';
+                    }
+                }
+            };
+            
+            // Первая попытка
+            retryRequest();
+            
+            // Повторные попытки с интервалом
+            const retryInterval = setInterval(() => {
+                if (requestId !== publicLobbiesRequestId) {
+                    clearInterval(retryInterval);
+                    return;
+                }
+                
+                if (publicLobbiesRetryCount >= MAX_RETRIES) {
+                    clearInterval(retryInterval);
+                    const currentText = listElement.innerHTML;
+                    if (currentText.includes('Загрузка...')) {
+                        console.warn('⚠️ Превышено количество попыток получения списка лобби');
+                        listElement.innerHTML = 
+                            '<p style="text-align: center; color: rgba(255,255,255,0.7);">⚠️ Не удалось загрузить список. Проверьте сообщения от бота или попробуйте обновить.</p>';
+                    }
+                    return;
+                }
+                
+                retryRequest();
+            }, 2000); // Повторяем каждые 2 секунды
+            
+            // Очистка интервала через 10 секунд
+            setTimeout(() => {
+                clearInterval(retryInterval);
+            }, 10000);
         }
         
         // Закрыть overlay публичных лобби
@@ -1390,6 +1446,8 @@
     </script>
 </body>
 </html>
+
+
 
 
 
