@@ -947,6 +947,7 @@
                 } else if (data.type === 'public_lobbies') {
                     // Получен список публичных лобби
                     console.log('📋 Получен список публичных лобби:', data);
+                    console.log('📋 Количество лобби:', (data.lobbies || []).length);
                     displayPublicLobbies(data.lobbies || []);
                 } else if (data.type === 'opponent_move' && data.sessionId === gameSessionId) {
                     // Получен ход от противника
@@ -1146,10 +1147,16 @@
                     alert('✅ Приватное лобби создано! Проверьте сообщения от бота для получения ссылки.');
                 } else {
                     // Для публичного лобби показываем список лобби, чтобы пользователь увидел свое
+                    // Сначала показываем overlay, потом alert
+                    showPublicLobbies();
+                    // Обновляем список через небольшую задержку, чтобы лобби успело создаться
                     setTimeout(() => {
-                        showPublicLobbies();
+                        refreshPublicLobbies();
+                    }, 1000);
+                    // Показываем alert после небольшой задержки, чтобы overlay успел открыться
+                    setTimeout(() => {
                         alert('✅ Публичное лобби создано! Ваше лобби появится в списке ниже.');
-                    }, 500);
+                    }, 300);
                 }
             } catch (e) {
                 console.error('❌ Ошибка создания лобби:', e);
@@ -1161,21 +1168,39 @@
         function showPublicLobbies() {
             const lobbyOverlay = document.getElementById('lobbyOverlay');
             const publicOverlay = document.getElementById('publicLobbiesOverlay');
-            if (lobbyOverlay) lobbyOverlay.classList.remove('show');
-            if (publicOverlay) publicOverlay.classList.add('show');
+            const createOverlay = document.getElementById('createLobbyOverlay');
             
+            // Закрываем другие overlay
+            if (lobbyOverlay) lobbyOverlay.classList.remove('show');
+            if (createOverlay) createOverlay.classList.remove('show');
+            
+            // Показываем overlay публичных лобби
+            if (publicOverlay) {
+                publicOverlay.classList.add('show');
+                console.log('📋 Overlay публичных лобби открыт');
+            } else {
+                console.error('❌ Элемент publicLobbiesOverlay не найден!');
+            }
+            
+            // Загружаем список лобби
             refreshPublicLobbies();
         }
         
         // Обновить список публичных лобби
         function refreshPublicLobbies() {
+            const listElement = document.getElementById('publicLobbiesList');
+            if (!listElement) {
+                console.error('❌ Элемент publicLobbiesList не найден!');
+                return;
+            }
+            
             if (!tg || !tg.sendData) {
-                document.getElementById('publicLobbiesList').innerHTML = 
+                listElement.innerHTML = 
                     '<p style="text-align: center; color: rgba(255,255,255,0.7);">❌ Telegram WebApp недоступен</p>';
                 return;
             }
             
-            document.getElementById('publicLobbiesList').innerHTML = 
+            listElement.innerHTML = 
                 '<p style="text-align: center; color: rgba(255,255,255,0.7);">Загрузка...</p>';
             
             try {
@@ -1183,10 +1208,10 @@
                     action: 'get_public_lobbies'
                 }));
                 
-                console.log('📋 Запрос списка публичных лобби');
+                console.log('📋 Запрос списка публичных лобби отправлен');
             } catch (e) {
                 console.error('❌ Ошибка запроса списка лобби:', e);
-                document.getElementById('publicLobbiesList').innerHTML = 
+                listElement.innerHTML = 
                     '<p style="text-align: center; color: rgba(255,255,255,0.7);">❌ Ошибка загрузки</p>';
             }
         }
@@ -1365,7 +1390,6 @@
     </script>
 </body>
 </html>
-
 
 
 
