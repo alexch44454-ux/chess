@@ -303,6 +303,60 @@
         </div>
     </div>
     
+    <div class="find-player-overlay" id="lobbyOverlay">
+        <div class="find-player-content" style="max-width: 400px;">
+            <h2>🏠 Лобби</h2>
+            <div id="lobbyContent">
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <button onclick="showCreateLobbyMenu()" style="background: rgba(52, 152, 219, 0.3); border-color: #3498db; padding: 15px; font-size: 16px;">
+                        ➕ Создать лобби
+                    </button>
+                    <button onclick="showPublicLobbies()" style="background: rgba(46, 204, 113, 0.3); border-color: #2ecc71; padding: 15px; font-size: 16px;">
+                        📋 Открытые лобби
+                    </button>
+                    <button onclick="closeLobbyOverlay()" style="background: rgba(149, 165, 166, 0.3); border-color: #95a5a6; padding: 15px; font-size: 16px;">
+                        ❌ Закрыть
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="find-player-overlay" id="createLobbyOverlay">
+        <div class="find-player-content">
+            <h2>➕ Создать лобби</h2>
+            <p style="margin-bottom: 20px; font-size: 14px; color: rgba(255,255,255,0.8);">
+                Выберите тип лобби:
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <button onclick="createLobby(false)" style="background: rgba(46, 204, 113, 0.3); border-color: #2ecc71; padding: 15px; font-size: 16px;">
+                    🌐 Публичное лобби
+                    <div style="font-size: 12px; margin-top: 5px; opacity: 0.8;">Все игроки могут найти и присоединиться</div>
+                </button>
+                <button onclick="createLobby(true)" style="background: rgba(155, 89, 182, 0.3); border-color: #9b59b6; padding: 15px; font-size: 16px;">
+                    🔒 Приватное лобби
+                    <div style="font-size: 12px; margin-top: 5px; opacity: 0.8;">Только по ссылке</div>
+                </button>
+                <button onclick="closeCreateLobbyOverlay()" style="background: rgba(149, 165, 166, 0.3); border-color: #95a5a6; padding: 10px;">
+                    ❌ Отмена
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="find-player-overlay" id="publicLobbiesOverlay">
+        <div class="find-player-content" style="max-width: 450px; max-height: 80vh; overflow-y: auto;">
+            <h2>📋 Открытые лобби</h2>
+            <div id="publicLobbiesList" style="margin: 20px 0;">
+                <p style="text-align: center; color: rgba(255,255,255,0.7);">Загрузка...</p>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button onclick="refreshPublicLobbies()" style="background: rgba(52, 152, 219, 0.3); border-color: #3498db;">🔄 Обновить</button>
+                <button onclick="closePublicLobbiesOverlay()" style="background: rgba(149, 165, 166, 0.3); border-color: #95a5a6;">❌ Закрыть</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         // Telegram WebApp API
         const tg = window.Telegram?.WebApp;
@@ -323,6 +377,7 @@
         let myColor = 'white'; // 'white' или 'black' для онлайн-игры
         let isMyTurn = true;
         let currentInvitation = null; // Текущее приглашение
+        let currentLobbyId = null; // ID текущего лобби
         
         // Unicode символы для фигур
         const pieces = {
@@ -888,6 +943,10 @@
                     // Получено приглашение в игру
                     console.log('🎮 Получено приглашение:', data);
                     showInvitation(data);
+                } else if (data.type === 'public_lobbies') {
+                    // Получен список публичных лобби
+                    console.log('📋 Получен список публичных лобби:', data);
+                    displayPublicLobbies(data.lobbies || []);
                 } else if (data.type === 'opponent_move' && data.sessionId === gameSessionId) {
                     // Получен ход от противника
                     applyOpponentMove(data.from, data.to, data.boardState);
@@ -904,6 +963,58 @@
                 // Если не JSON, игнорируем (это может быть обычное текстовое сообщение)
                 console.log('Сообщение не является JSON, игнорируем:', messageText);
             }
+        }
+        
+        // Отображение списка публичных лобби
+        function displayPublicLobbies(lobbies) {
+            const listElement = document.getElementById('publicLobbiesList');
+            if (!listElement) return;
+            
+            if (lobbies.length === 0) {
+                listElement.innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.7);">Нет открытых лобби</p>';
+                return;
+            }
+            
+            let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+            
+            lobbies.forEach(lobby => {
+                const createdDate = new Date(lobby.created_at);
+                const timeAgo = getTimeAgo(createdDate);
+                
+                html += `
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);">
+                        <div style="font-weight: bold; margin-bottom: 5px;">
+                            👤 ${lobby.host_user_name}${lobby.host_username ? ' (@' + lobby.host_username + ')' : ''}
+                        </div>
+                        <div style="font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom: 10px;">
+                            Создано ${timeAgo}
+                        </div>
+                        <button onclick="joinLobby('${lobby.lobby_id}')" 
+                                style="width: 100%; background: rgba(46, 204, 113, 0.3); border-color: #2ecc71; padding: 10px;">
+                            ➕ Присоединиться
+                        </button>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            listElement.innerHTML = html;
+        }
+        
+        // Получить время назад (например, "5 минут назад")
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if (diffMins < 1) return 'только что';
+            if (diffMins < 60) return `${diffMins} ${diffMins === 1 ? 'минуту' : diffMins < 5 ? 'минуты' : 'минут'} назад`;
+            
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'час' : diffHours < 5 ? 'часа' : 'часов'} назад`;
+            
+            const diffDays = Math.floor(diffHours / 24);
+            return `${diffDays} ${diffDays === 1 ? 'день' : diffDays < 5 ? 'дня' : 'дней'} назад`;
         }
         
         // Показ приглашения
@@ -977,6 +1088,132 @@
             }
         }
         
+        // Показать overlay лобби
+        function showLobbyOverlay() {
+            const overlay = document.getElementById('lobbyOverlay');
+            if (overlay) {
+                overlay.classList.add('show');
+            }
+        }
+        
+        // Закрыть overlay лобби
+        function closeLobbyOverlay() {
+            const overlay = document.getElementById('lobbyOverlay');
+            if (overlay) {
+                overlay.classList.remove('show');
+            }
+        }
+        
+        // Показать меню создания лобби
+        function showCreateLobbyMenu() {
+            const lobbyOverlay = document.getElementById('lobbyOverlay');
+            const createOverlay = document.getElementById('createLobbyOverlay');
+            if (lobbyOverlay) lobbyOverlay.classList.remove('show');
+            if (createOverlay) createOverlay.classList.add('show');
+        }
+        
+        // Закрыть меню создания лобби
+        function closeCreateLobbyOverlay() {
+            const createOverlay = document.getElementById('createLobbyOverlay');
+            if (createOverlay) {
+                createOverlay.classList.remove('show');
+            }
+            showLobbyOverlay();
+        }
+        
+        // Создать лобби
+        function createLobby(isPrivate) {
+            if (!tg || !tg.sendData) {
+                alert('Ошибка: Telegram WebApp недоступен');
+                return;
+            }
+            
+            try {
+                tg.sendData(JSON.stringify({
+                    action: 'create_lobby',
+                    isPrivate: isPrivate
+                }));
+                
+                console.log(`✅ Запрос на создание ${isPrivate ? 'приватного' : 'публичного'} лобби`);
+                
+                // Закрываем overlay
+                closeCreateLobbyOverlay();
+                closeLobbyOverlay();
+                
+                alert(isPrivate 
+                    ? '✅ Приватное лобби создано! Проверьте сообщения от бота для получения ссылки.'
+                    : '✅ Публичное лобби создано! Проверьте сообщения от бота.');
+            } catch (e) {
+                console.error('❌ Ошибка создания лобби:', e);
+                alert('Ошибка создания лобби. Попробуйте еще раз.');
+            }
+        }
+        
+        // Показать публичные лобби
+        function showPublicLobbies() {
+            const lobbyOverlay = document.getElementById('lobbyOverlay');
+            const publicOverlay = document.getElementById('publicLobbiesOverlay');
+            if (lobbyOverlay) lobbyOverlay.classList.remove('show');
+            if (publicOverlay) publicOverlay.classList.add('show');
+            
+            refreshPublicLobbies();
+        }
+        
+        // Обновить список публичных лобби
+        function refreshPublicLobbies() {
+            if (!tg || !tg.sendData) {
+                document.getElementById('publicLobbiesList').innerHTML = 
+                    '<p style="text-align: center; color: rgba(255,255,255,0.7);">❌ Telegram WebApp недоступен</p>';
+                return;
+            }
+            
+            document.getElementById('publicLobbiesList').innerHTML = 
+                '<p style="text-align: center; color: rgba(255,255,255,0.7);">Загрузка...</p>';
+            
+            try {
+                tg.sendData(JSON.stringify({
+                    action: 'get_public_lobbies'
+                }));
+                
+                console.log('📋 Запрос списка публичных лобби');
+            } catch (e) {
+                console.error('❌ Ошибка запроса списка лобби:', e);
+                document.getElementById('publicLobbiesList').innerHTML = 
+                    '<p style="text-align: center; color: rgba(255,255,255,0.7);">❌ Ошибка загрузки</p>';
+            }
+        }
+        
+        // Закрыть overlay публичных лобби
+        function closePublicLobbiesOverlay() {
+            const publicOverlay = document.getElementById('publicLobbiesOverlay');
+            if (publicOverlay) {
+                publicOverlay.classList.remove('show');
+            }
+            showLobbyOverlay();
+        }
+        
+        // Присоединиться к лобби
+        function joinLobby(lobbyId) {
+            if (!tg || !tg.sendData) {
+                alert('Ошибка: Telegram WebApp недоступен');
+                return;
+            }
+            
+            try {
+                tg.sendData(JSON.stringify({
+                    action: 'join_lobby',
+                    lobbyId: lobbyId
+                }));
+                
+                console.log(`✅ Запрос на подключение к лобби: ${lobbyId}`);
+                
+                alert('✅ Запрос на подключение отправлен! Проверьте сообщения от бота.');
+            } catch (e) {
+                console.error('❌ Ошибка подключения к лобби:', e);
+                alert('Ошибка подключения к лобби. Попробуйте еще раз.');
+            }
+        }
+        
         // Инициализация игры
         function init() {
             // Получаем параметры из URL
@@ -986,6 +1223,34 @@
             myPlayerNumber = urlParams.get('player') ? parseInt(urlParams.get('player')) : null;
             myColor = urlParams.get('color') || 'white';
             const findPlayer = urlParams.get('find_player') === 'true';
+            currentLobbyId = urlParams.get('lobby') || null;
+            
+            // Если режим лобби
+            if (gameMode === 'lobby') {
+                setTimeout(() => {
+                    showLobbyOverlay();
+                }, 500);
+                registerPlayer();
+                const gameContainer = document.querySelector('.game-container');
+                if (gameContainer) {
+                    gameContainer.style.display = 'none';
+                }
+                initBoard();
+                return;
+            }
+            
+            // Если подключение к лобби по ссылке
+            if (currentLobbyId && gameMode === 'online' && !gameSessionId) {
+                // Показываем информацию о подключении к лобби
+                joinLobby(currentLobbyId);
+                registerPlayer();
+                const gameContainer = document.querySelector('.game-container');
+                if (gameContainer) {
+                    gameContainer.style.display = 'none';
+                }
+                initBoard();
+                return;
+            }
             
             // Если нужно показать overlay поиска игрока
             if (findPlayer && gameMode === 'online' && !gameSessionId) {
@@ -1085,7 +1350,6 @@
     </script>
 </body>
 </html>
-
 
 
 
